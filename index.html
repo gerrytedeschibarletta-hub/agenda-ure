@@ -7,6 +7,7 @@
 <meta name="description" content="Agenda condivisa della IV Sezione Ufficio Relazioni Esterne – Questura BAT">
 <meta name="theme-color" content="#1c3d8c">
 <link rel="manifest" href="manifest.webmanifest">
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
@@ -49,6 +50,14 @@
     <div class="bar" id="bar"></div>
     <span id="loader-text" style="color:var(--muted)">Apertura dell'agenda…</span>
     <button class="btn primary" id="retry" type="button" hidden style="max-width:240px">Riprova</button>
+
+    <!-- Richiesta notifiche al primo avvio dall'icona -->
+    <section class="card" id="ask" hidden style="max-width:360px;text-align:left">
+      <h2>🔔 Attiva le notifiche</h2>
+      <p style="margin:0">Ricevi sul telefono, con suono e anche ad app chiusa, gli avvisi di nuovi appuntamenti, note e comunicazioni, e i promemoria degli appuntamenti.</p>
+      <button class="btn primary" id="ask-yes" type="button">Attiva notifiche</button>
+      <button class="btn ghost" id="ask-no" type="button">Più tardi</button>
+    </section>
   </div>
 
   <!-- Aperta dal browser: pagina di installazione -->
@@ -85,6 +94,12 @@
       <p style="margin:0">Trovi l'icona <b>Agenda URE</b> tra le app del telefono. Aprila da lì.</p>
     </section>
 
+    <section class="card" id="notif-card" hidden>
+      <h2>🔔 Notifiche</h2>
+      <p style="margin:0" id="notif-text"></p>
+      <button class="btn primary" id="notif-btn" type="button" hidden>Attiva notifiche su questo telefono</button>
+    </section>
+
     <a class="btn ghost" id="open-browser" href="#">Apri l'agenda senza installare</a>
     <p class="note">I dati sono salvati sul Foglio Google dell'ufficio: tutti vedono le stesse voci.</p>
   </main>
@@ -102,6 +117,37 @@
 
     $('open-browser').href = APP_URL;
 
+    /* Notifiche push (OneSignal) */
+    const ONESIGNAL_APP_ID = '90b4d365-7414-4df3-a903-61cad4aac518';
+    const store = { get(k){ try { return localStorage.getItem(k) || ''; } catch(e){ return ''; } },
+                    set(k,v){ try { localStorage.setItem(k,v); } catch(e){} } };
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    const osReady = new Promise(res => {
+      const t = setTimeout(() => res(null), 6000);
+      OneSignalDeferred.push(async OS => {
+        try {
+          await OS.init({
+            appId: ONESIGNAL_APP_ID,
+            serviceWorkerPath: 'agenda-ure/sw.js',
+            serviceWorkerParam: { scope: '/agenda-ure/' },
+            notifyButton: { enable: false },
+            welcomeNotification: { disable: true }
+          });
+          clearTimeout(t); res(OS);
+        } catch (e) { clearTimeout(t); res(null); }
+      });
+    });
+    const pushOk = OS => !!(OS && OS.Notifications.isPushSupported());
+    const permesso = () => (typeof Notification !== 'undefined') ? Notification.permission : 'unsupported';
+
+    async function attiva(OS) {
+      await OS.Notifications.requestPermission();
+      if (permesso() === 'granted' && !OS.User.PushSubscription.optedIn) await OS.User.PushSubscription.optIn();
+      // lascia il tempo di registrare il telefono prima di proseguire
+      await new Promise(r => setTimeout(r, 1500));
+      return permesso() === 'granted';
+    }
+
     if (standalone) {
       $('loader').hidden = false;
       const apri = () => {
@@ -115,7 +161,23 @@
       $('retry').addEventListener('click', apri);
       window.addEventListener('online', apri);
       window.addEventListener('pageshow', e => { if (e.persisted) apri(); });
-      apri();
+
+      (async () => {
+        const OS = await osReady;
+        const rinviato = Number(store.get('notif-rinvio') || 0);
+        const daChiedere = pushOk(OS) && permesso() === 'default' && Date.now() > rinviato;
+        if (!daChiedere) { apri(); return; }
+        $('bar').hidden = true; $('loader-text').hidden = true; $('ask').hidden = false;
+        $('ask-yes').addEventListener('click', async () => {
+          $('ask-yes').disabled = true; $('ask-yes').textContent = 'Attivazione…';
+          try { await attiva(OS); } catch (e) {}
+          apri();
+        });
+        $('ask-no').addEventListener('click', () => {
+          store.set('notif-rinvio', String(Date.now() + 3 * 24 * 3600 * 1000)); // richiede di nuovo tra 3 giorni
+          apri();
+        });
+      })();
     } else {
       $('install').hidden = false;
       $(ios ? 'how-ios' : 'how-android').hidden = false;
@@ -134,11 +196,28 @@
       window.addEventListener('appinstalled', () => {
         $('btn-install').hidden = true; $('how-android').hidden = true; $('done').hidden = false;
       });
+
+      /* Stato notifiche nella pagina di installazione */
+      (async () => {
+        const card = $('notif-card'), txt = $('notif-text'), btn = $('notif-btn');
+        card.hidden = false;
+        if (ios) { txt.textContent = 'Su iPhone (iOS 16.4 o successivo) le notifiche si attivano dopo l\'installazione: apri l\'app dall\'icona Agenda URE e tocca “Attiva notifiche”.'; return; }
+        txt.textContent = 'Verifica in corso…';
+        const OS = await osReady;
+        const aggiorna = () => {
+          if (!pushOk(OS)) { txt.textContent = 'Questo browser non supporta le notifiche. Usa Chrome su Android.'; btn.hidden = true; return; }
+          if (permesso() === 'granted') { txt.textContent = '✅ Notifiche attive su questo telefono.'; btn.hidden = true; return; }
+          if (permesso() === 'denied') { txt.textContent = 'Le notifiche sono bloccate. Riattivale da Impostazioni del telefono → App → Agenda URE (o Chrome) → Notifiche.'; btn.hidden = true; return; }
+          txt.textContent = 'Ricevi avvisi di nuovi appuntamenti, note e comunicazioni e i promemoria, anche ad app chiusa. Puoi attivarle ora o al primo avvio dell\'app.';
+          btn.hidden = false;
+        };
+        aggiorna();
+        btn.addEventListener('click', async () => { btn.disabled = true; try { await attiva(OS); } catch (e) {} btn.disabled = false; aggiorna(); });
+      })();
     }
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
-    }
+    // il service worker (sw.js) viene registrato da OneSignal; se OneSignal non risponde lo registra la pagina
+    osReady.then(OS => { if (!OS && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {}); });
   </script>
 </body>
 </html>
