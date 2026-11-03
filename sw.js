@@ -3,9 +3,9 @@
    i dati dell'agenda arrivano sempre dal Foglio Google.
    Le notifiche push sono gestite da OneSignal. */
 importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
-const CACHE = 'agenda-ure-v7';
+const CACHE = 'agenda-ure-v8';
 const SHELL = ['./', 'index.html', 'manifest.webmanifest',
-  'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/favicon-32.png'];
+  'icons/icon-192-v2.png', 'icons/icon-512-v2.png', 'icons/apple-touch-icon-v2.png', 'icons/favicon-32-v2.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
