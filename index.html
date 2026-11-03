@@ -5,8 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Agenda URE</title>
 <meta name="description" content="Agenda condivisa della IV Sezione Ufficio Relazioni Esterne – Questura BAT">
-<meta name="theme-color" content="#f2f4f8" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0d1322" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#1c3d8c">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -15,57 +14,127 @@
 <meta name="apple-mobile-web-app-title" content="Agenda URE">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
-  :root{--bg:#f2f4f8;--ink:#15213a;--muted:#5a6680;--accent:#1c3d8c;color-scheme:light}
-  @media (prefers-color-scheme: dark){:root{--bg:#0d1322;--ink:#e5e9f2;--muted:#97a2ba;--accent:#86a6ff;color-scheme:dark}}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
-    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
-  .screen{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:14px;padding:24px;text-align:center;background:var(--bg);z-index:5}
-  .screen img{width:84px;height:84px;border-radius:20px}
-  .screen b{font-size:20px}
-  .screen span{color:var(--muted);font-size:15px;max-width:320px}
-  .bar{width:120px;height:4px;border-radius:2px;background:color-mix(in srgb,var(--accent) 20%,transparent);overflow:hidden}
+  :root{--bg:#f2f4f8;--surface:#fff;--ink:#15213a;--muted:#5a6680;--line:#d9dfea;--accent:#1c3d8c;--on-accent:#fff;color-scheme:light}
+  @media (prefers-color-scheme: dark){:root{--bg:#0d1322;--surface:#151d31;--ink:#e5e9f2;--muted:#97a2ba;--line:#263150;--accent:#86a6ff;--on-accent:#0d1322;color-scheme:dark}}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
+  body{padding:max(24px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(safe-area-inset-left,0px))}
+  main{max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+  .head{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding-top:8px}
+  .head img{width:96px;height:96px;border-radius:22px}
+  .eyebrow{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  h1{margin:0;font-size:26px;line-height:1.15}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+  .card h2{margin:0;font-size:17px}
+  ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
+  .btn{display:block;width:100%;text-align:center;font:inherit;font-weight:600;font-size:16px;border-radius:11px;padding:13px 16px;border:1px solid var(--accent);text-decoration:none;cursor:pointer}
+  .btn.primary{background:var(--accent);color:var(--on-accent)}
+  .btn.ghost{background:transparent;color:var(--accent)}
+  .note{font-size:13px;color:var(--muted);text-align:center;margin:0}
+  .loader{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--bg);text-align:center;padding:24px}
+  .loader img{width:84px;height:84px;border-radius:20px}
+  .bar{width:120px;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
   .bar::after{content:"";display:block;width:40%;height:100%;background:var(--accent);animation:run 1.1s ease-in-out infinite}
   @keyframes run{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
   @media (prefers-reduced-motion:reduce){.bar::after{animation:none;width:100%}}
-  button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 18px;background:var(--accent);color:var(--bg)}
   [hidden]{display:none!important}
 </style>
 </head>
 <body>
-  <div class="screen" id="loader">
+  <!-- Aperta dall'icona: porta subito all'agenda -->
+  <div class="loader" id="loader" hidden>
     <img src="icons/icon-192.png" alt="">
-    <b>Agenda Relazioni Esterne</b>
-    <div class="bar"></div>
-    <span>Caricamento dell'agenda…</span>
+    <b id="loader-title">Agenda Relazioni Esterne</b>
+    <div class="bar" id="bar"></div>
+    <span id="loader-text" style="color:var(--muted)">Apertura dell'agenda…</span>
+    <button class="btn primary" id="retry" type="button" hidden style="max-width:240px">Riprova</button>
   </div>
 
-  <div class="screen" id="offline" hidden>
-    <img src="icons/icon-192.png" alt="">
-    <b>Nessuna connessione</b>
-    <span>L'agenda è salvata online: si aggiornerà appena il telefono torna connesso.</span>
-    <button type="button" id="retry">Riprova</button>
-  </div>
+  <!-- Aperta dal browser: pagina di installazione -->
+  <main id="install" hidden>
+    <div class="head">
+      <img src="icons/icon-192.png" alt="">
+      <div class="eyebrow">Questura BAT · IV Sezione URE</div>
+      <h1>Agenda Relazioni Esterne</h1>
+    </div>
+
+    <button class="btn primary" id="btn-install" type="button" hidden>Installa l'app</button>
+
+    <section class="card" id="how-android" hidden>
+      <h2>Installa su Android</h2>
+      <ol>
+        <li>Tocca il menu <b>⋮</b> in alto a destra di Chrome.</li>
+        <li>Scegli <b>Installa app</b>. Se non c'è, scegli <b>Aggiungi a schermata Home</b> e poi <b>Installa</b>.</li>
+        <li>Apri l'agenda dall'icona <b>Agenda URE</b>.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="how-ios" hidden>
+      <h2>Installa su iPhone</h2>
+      <ol>
+        <li>Apri questa pagina con <b>Safari</b>.</li>
+        <li>Tocca <b>Condividi</b> (il quadrato con la freccia in su).</li>
+        <li>Scegli <b>Aggiungi alla schermata Home</b> e poi <b>Aggiungi</b>.</li>
+        <li>Apri l'agenda dall'icona <b>Agenda URE</b>.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="done" hidden>
+      <h2>App installata</h2>
+      <p style="margin:0">Trovi l'icona <b>Agenda URE</b> tra le app del telefono. Aprila da lì.</p>
+    </section>
+
+    <a class="btn ghost" id="open-browser" href="#">Apri l'agenda senza installare</a>
+    <p class="note">I dati sono salvati sul Foglio Google dell'ufficio: tutti vedono le stesse voci.</p>
+  </main>
 
   <script>
     /* Indirizzo della web app Apps Script (Esegui il deployment → URL dell'app web) */
     const APP_URL = 'https://script.google.com/macros/s/AKfycbwVyN19TnfCXC2iyDB0K5xU67ijfwiVYhPYPz9qg5auszr5wIEfHCkCFn4n9B3iuN5b/exec';
 
-    const loader = document.getElementById('loader');
-    const offline = document.getElementById('offline');
+    const $ = id => document.getElementById(id);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches
+      || window.matchMedia('(display-mode: fullscreen)').matches
+      || window.navigator.standalone === true;
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent)
+      || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-    /* Apre l'agenda direttamente (senza incorporarla), così Google non può rifiutare la connessione */
-    function apri() {
-      if (!navigator.onLine) { offline.hidden = false; loader.hidden = true; return; }
-      offline.hidden = true; loader.hidden = false;
-      location.replace(APP_URL);
+    $('open-browser').href = APP_URL;
+
+    if (standalone) {
+      $('loader').hidden = false;
+      const apri = () => {
+        if (!navigator.onLine) {
+          $('loader-title').textContent = 'Nessuna connessione';
+          $('loader-text').textContent = 'L\'agenda è online: riprova quando il telefono è connesso.';
+          $('bar').hidden = true; $('retry').hidden = false; return;
+        }
+        location.replace(APP_URL);
+      };
+      $('retry').addEventListener('click', apri);
+      window.addEventListener('online', apri);
+      window.addEventListener('pageshow', e => { if (e.persisted) apri(); });
+      apri();
+    } else {
+      $('install').hidden = false;
+      $(ios ? 'how-ios' : 'how-android').hidden = false;
+
+      let prompt = null;
+      window.addEventListener('beforeinstallprompt', e => {
+        e.preventDefault(); prompt = e; $('btn-install').hidden = false;
+      });
+      $('btn-install').addEventListener('click', async () => {
+        if (!prompt) return;
+        prompt.prompt();
+        const r = await prompt.userChoice;
+        prompt = null; $('btn-install').hidden = true;
+        if (r.outcome === 'accepted') { $('done').hidden = false; $('how-android').hidden = true; }
+      });
+      window.addEventListener('appinstalled', () => {
+        $('btn-install').hidden = true; $('how-android').hidden = true; $('done').hidden = false;
+      });
     }
-    document.getElementById('retry').addEventListener('click', apri);
-    window.addEventListener('online', apri);
-    // quando si torna all'app dopo averla lasciata in sospeso, riapre l'agenda
-    window.addEventListener('pageshow', e => { if (e.persisted) apri(); });
-
-    apri();
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});
