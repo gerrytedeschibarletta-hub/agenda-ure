@@ -51,6 +51,24 @@
     <span id="loader-text" style="color:var(--muted)">Apertura dell'agenda…</span>
     <button class="btn primary" id="retry" type="button" hidden style="max-width:240px">Riprova</button>
 
+    <!-- Sblocco con impronta a ogni apertura -->
+    <section class="card" id="lock" hidden style="max-width:360px;text-align:left">
+      <h2>🔒 Agenda bloccata</h2>
+      <p style="margin:0">Usa l'impronta (o Face ID) per aprire l'agenda.</p>
+      <button class="btn primary" id="lock-go" type="button">Sblocca con impronta</button>
+      <p style="margin:0;color:var(--com);font-size:14px" id="lock-err"></p>
+      <button class="btn ghost" id="lock-reset" type="button" hidden>Reimposta sblocco</button>
+    </section>
+
+    <!-- Proposta di attivare l'impronta -->
+    <section class="card" id="bio-ask" hidden style="max-width:360px;text-align:left">
+      <h2>🫆 Sblocco con impronta</h2>
+      <p style="margin:0">Proteggi l'agenda su questo telefono: a ogni apertura verrà chiesta l'impronta o Face ID. Impronta e volto restano sul telefono.</p>
+      <button class="btn primary" id="bio-yes" type="button">Attiva sblocco con impronta</button>
+      <button class="btn ghost" id="bio-no" type="button">Non ora</button>
+      <p style="margin:0;color:var(--com);font-size:14px" id="bio-err"></p>
+    </section>
+
     <!-- Richiesta notifiche al primo avvio dall'icona -->
     <section class="card" id="ask" hidden style="max-width:360px;text-align:left">
       <h2>🔔 Attiva le notifiche</h2>
@@ -148,35 +166,116 @@
       return permesso() === 'granted';
     }
 
+    /* Sblocco con impronta (WebAuthn, autenticatore del telefono) */
+    const LOCK_KEY = 'sblocco-cred';
+    const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+    const unb64 = t => Uint8Array.from(atob(t.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((t.length + 3) % 4)), c => c.charCodeAt(0));
+    async function biometriaDisponibile() {
+      try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); }
+      catch (e) { return false; }
+    }
+    async function registraImpronta() {
+      const cred = await navigator.credentials.create({ publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        rp: { name: 'Agenda URE' },
+        user: { id: crypto.getRandomValues(new Uint8Array(16)), name: 'agenda-ure', displayName: 'Agenda URE' },
+        pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }],
+        authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+        attestation: 'none', timeout: 60000 } });
+      store.set(LOCK_KEY, b64(cred.rawId));
+    }
+    async function verificaImpronta() {
+      const a = await navigator.credentials.get({ publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        allowCredentials: [{ type: 'public-key', id: unb64(store.get(LOCK_KEY)), transports: ['internal'] }],
+        userVerification: 'required', timeout: 60000 } });
+      const flags = new Uint8Array(a.response.authenticatorData)[32];
+      if (!(flags & 0x04)) throw new Error('verifica non riuscita');   // UV: utente verificato dal telefono
+    }
+
     if (standalone) {
       $('loader').hidden = false;
+      const schermata = id => { ['bar', 'loader-text', 'lock', 'bio-ask', 'ask'].forEach(x => $(x).hidden = !(x === id || (id === 'bar' && x === 'loader-text'))); };
       const apri = () => {
         if (!navigator.onLine) {
+          schermata('loader-text');
           $('loader-title').textContent = 'Nessuna connessione';
           $('loader-text').textContent = 'L\'agenda è online: riprova quando il telefono è connesso.';
-          $('bar').hidden = true; $('retry').hidden = false; return;
+          $('retry').hidden = false; return;
         }
-        location.replace(APP_URL);
+        // con lo sblocco attivo l'agenda si richiude da sola dopo un minuto in background
+        location.replace(APP_URL + (store.get(LOCK_KEY) ? '?blocco=1' : ''));
       };
       $('retry').addEventListener('click', apri);
-      window.addEventListener('online', apri);
-      window.addEventListener('pageshow', e => { if (e.persisted) apri(); });
+      window.addEventListener('online', () => { if (!$('retry').hidden) apri(); });
 
-      (async () => {
-        const OS = await osReady;
+      const passo = fn => new Promise(res => fn(res));
+
+      // 1. sblocco con impronta, se attivo
+      const sblocca = () => passo(fatto => {
+        if (!store.get(LOCK_KEY)) { fatto(); return; }
+        schermata('lock');
+        let errori = 0, armato = false;
+        const prova = async auto => {
+          $('lock-go').disabled = true; $('lock-err').textContent = '';
+          try { await verificaImpronta(); fatto(); }
+          catch (e) {
+            if (!auto) errori++;
+            $('lock-err').textContent = auto ? '' : 'Impronta non riconosciuta o annullata. Riprova.';
+            if (errori >= 3) $('lock-reset').hidden = false;
+          } finally { $('lock-go').disabled = false; }
+        };
+        $('lock-go').addEventListener('click', () => prova(false));
+        $('lock-reset').addEventListener('click', () => {
+          if (!armato) { armato = true; $('lock-reset').textContent = 'Conferma: dovrai chiedere di nuovo l\'accesso'; return; }
+          try { localStorage.removeItem(LOCK_KEY); } catch (e) {}
+          location.replace(APP_URL + '?riapprova=1');   // per sicurezza serve una nuova approvazione dell'amministratore
+        });
+        prova(true);   // su Android parte subito; su iPhone serve il tocco sul pulsante
+      });
+
+      // 2. richiesta notifiche (al primo avvio, poi ogni 3 giorni se rinviata)
+      const notifiche = OS => passo(fatto => {
         const rinviato = Number(store.get('notif-rinvio') || 0);
-        const daChiedere = pushOk(OS) && permesso() === 'default' && Date.now() > rinviato;
-        if (!daChiedere) { apri(); return; }
-        $('bar').hidden = true; $('loader-text').hidden = true; $('ask').hidden = false;
+        if (!(pushOk(OS) && permesso() === 'default' && Date.now() > rinviato)) { fatto(); return; }
+        schermata('ask');
         $('ask-yes').addEventListener('click', async () => {
           $('ask-yes').disabled = true; $('ask-yes').textContent = 'Attivazione…';
           try { await attiva(OS); } catch (e) {}
-          apri();
+          fatto();
         });
         $('ask-no').addEventListener('click', () => {
-          store.set('notif-rinvio', String(Date.now() + 3 * 24 * 3600 * 1000)); // richiede di nuovo tra 3 giorni
-          apri();
+          store.set('notif-rinvio', String(Date.now() + 3 * 24 * 3600 * 1000));
+          fatto();
         });
+      });
+
+      // 3. proposta di attivare l'impronta (se il telefono la supporta; dopo "Non ora" ripropone tra 7 giorni)
+      const proponiImpronta = () => passo(async fatto => {
+        const rinvio = Number(store.get('bio-rinvio') || 0);
+        if (store.get(LOCK_KEY) || Date.now() < rinvio || !(await biometriaDisponibile())) { fatto(); return; }
+        schermata('bio-ask');
+        $('bio-yes').addEventListener('click', async () => {
+          $('bio-yes').disabled = true; $('bio-err').textContent = '';
+          try { await registraImpronta(); fatto(); }
+          catch (e) { $('bio-err').textContent = 'Attivazione non riuscita o annullata. Riprova o tocca "Non ora".'; }
+          finally { $('bio-yes').disabled = false; }
+        });
+        $('bio-no').addEventListener('click', () => {
+          store.set('bio-rinvio', String(Date.now() + 7 * 24 * 3600 * 1000));
+          fatto();
+        });
+      });
+
+      (async () => {
+        await sblocca();
+        schermata('bar');
+        // OneSignal serve solo se le notifiche non sono ancora state decise: così l'apertura resta immediata
+        const OS = permesso() === 'default' ? await osReady : null;
+        await notifiche(OS);
+        await proponiImpronta();
+        schermata('bar');
+        apri();
       })();
     } else {
       $('install').hidden = false;
