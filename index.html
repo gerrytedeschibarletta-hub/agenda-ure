@@ -14,25 +14,29 @@
 <meta name="apple-mobile-web-app-title" content="Agenda URE">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <style>
-  :root{--bg:#f2f4f8;--surface:#fff;--ink:#15213a;--muted:#5a6680;--line:#d9dfea;--accent:#1c3d8c;--on-accent:#fff;color-scheme:light}
-  @media (prefers-color-scheme: dark){:root{--bg:#0d1322;--surface:#151d31;--ink:#e5e9f2;--muted:#97a2ba;--line:#263150;--accent:#86a6ff;--on-accent:#0d1322;color-scheme:dark}}
+  :root{--bg:#f2f4f8;--surface:#fff;--glass:rgba(255,255,255,.92);--ink:#15213a;--muted:#5a6680;--line:#d9dfea;--accent:#1c3d8c;--on-accent:#fff;color-scheme:light}
+  @media (prefers-color-scheme: dark){:root{--bg:#0d1322;--surface:#151d31;--glass:rgba(21,29,49,.92);--ink:#e5e9f2;--muted:#97a2ba;--line:#263150;--accent:#86a6ff;--on-accent:#0d1322;color-scheme:dark}}
+  /* foto della Questura come sfondo fisso */
+  .photo{position:fixed;inset:0;z-index:0;background:#c9cfd8 url("img/sfondo.jpg") center/cover no-repeat}
+  @media (max-aspect-ratio:4/5){.photo{background-image:url("img/sfondo-verticale.jpg")}}
   *{box-sizing:border-box}
   html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.45}
   body{padding:max(24px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) 32px max(16px,env(safe-area-inset-left,0px))}
-  main{max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
-  .head{display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;padding-top:8px}
-  .head img{width:96px;height:96px;border-radius:22px}
+  main{position:relative;z-index:1;max-width:440px;margin:0 auto;display:flex;flex-direction:column;gap:14px;padding-top:30vh}
+  .head{display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;background:var(--glass);border-radius:14px;padding:18px;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+  .head img{width:72px;height:72px;border-radius:18px;margin-top:-54px;box-shadow:0 4px 14px rgba(0,0,0,.25)}
   .eyebrow{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
   h1{margin:0;font-size:26px;line-height:1.15}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+  .card{background:var(--glass);box-shadow:0 6px 24px rgba(0,0,0,.14);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
   .card h2{margin:0;font-size:17px}
   ol{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px}
   .btn{display:block;width:100%;text-align:center;font:inherit;font-weight:600;font-size:16px;border-radius:11px;padding:13px 16px;border:1px solid var(--accent);text-decoration:none;cursor:pointer}
   .btn.primary{background:var(--accent);color:var(--on-accent)}
-  .btn.ghost{background:transparent;color:var(--accent)}
-  .note{font-size:13px;color:var(--muted);text-align:center;margin:0}
-  .loader{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:var(--bg);text-align:center;padding:24px}
+  .btn.ghost{background:var(--glass);color:var(--accent)}
+  .note{font-size:13px;color:var(--ink);text-align:center;margin:0;background:var(--glass);border-radius:10px;padding:8px 12px}
+  .loader{position:fixed;inset:0;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:12px;text-align:center;padding:24px 24px calc(48px + env(safe-area-inset-bottom,0px))}
+  .loader-card{background:var(--glass);border-radius:16px;padding:18px 22px;display:flex;flex-direction:column;align-items:center;gap:12px;box-shadow:0 6px 24px rgba(0,0,0,.2);max-width:340px;width:100%}
   .loader img{width:84px;height:84px;border-radius:20px}
   .bar{width:120px;height:4px;border-radius:2px;background:var(--line);overflow:hidden}
   .bar::after{content:"";display:block;width:40%;height:100%;background:var(--accent);animation:run 1.1s ease-in-out infinite}
@@ -42,13 +46,16 @@
 </style>
 </head>
 <body>
+  <div class="photo" aria-hidden="true"></div>
+
   <!-- Aperta dall'icona: porta subito all'agenda -->
   <div class="loader" id="loader" hidden>
-    <img src="icons/icon-192.png" alt="">
-    <b id="loader-title">Agenda Relazioni Esterne</b>
-    <div class="bar" id="bar"></div>
-    <span id="loader-text" style="color:var(--muted)">Apertura dell'agenda…</span>
-    <button class="btn primary" id="retry" type="button" hidden style="max-width:240px">Riprova</button>
+    <div class="loader-card">
+      <b id="loader-title">Agenda Relazioni Esterne</b>
+      <div class="bar" id="bar"></div>
+      <span id="loader-text" style="color:var(--muted)">Apertura dell'agenda…</span>
+      <button class="btn primary" id="retry" type="button" hidden>Riprova</button>
+    </div>
   </div>
 
   <!-- Aperta dal browser: pagina di installazione -->
